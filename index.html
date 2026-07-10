@@ -305,7 +305,7 @@
       </div>
       <div class="job-number">
         <label for="jobOrder">Job Order</label>
-        <input id="jobOrder" name="jobOrder" inputmode="numeric" value="0017293" />
+        <input id="jobOrder" name="jobOrder" readonly />
       </div>
     </div>
 
@@ -314,16 +314,16 @@
     <fieldset>
       <legend>Customer Details</legend>
       <div class="grid two">
-        <label><span>Company</span><input name="company" autocomplete="organization" value="The Soy Company" /></label>
-        <label><span>Date</span><input name="date" type="date" value="2025-12-28" /></label>
+        <label><span>Company</span><input name="company" autocomplete="organization" /></label>
+        <label><span>Date</span><input name="date" type="date" /></label>
         <label><span>Requested By</span><input name="requestedBy" autocomplete="name" /></label>
       </div>
     </fieldset>
 
     <fieldset>
       <legend>Work Report</legend>
-      <label><span>Complaint</span><textarea name="complaint" rows="3">Boiler cannot run.</textarea></label>
-      <label><span>Action Taken</span><textarea name="actionTaken" rows="5">Supplied main power and tested. Serviced burner and checked oil supply. Test OK.</textarea></label>
+      <label><span>Complaint</span><textarea name="complaint" rows="3"></textarea></label>
+      <label><span>Action Taken</span><textarea name="actionTaken" rows="5"></textarea></label>
     </fieldset>
 
     <fieldset>
@@ -341,9 +341,9 @@
     <fieldset>
       <legend>Labour</legend>
       <div class="grid three">
-        <label><span>Labour Description</span><input name="labourDescription" value="Labour" /></label>
+        <label><span>Labour Description</span><input name="labourDescription" /></label>
         <label><span>Man</span><input name="labourMan" type="number" min="0" step="1" inputmode="numeric" /></label>
-        <label><span>Hours</span><input name="labourHours" type="number" min="0" step="0.5" inputmode="decimal" value="4" /></label>
+        <label><span>Hours</span><input name="labourHours" type="number" min="0" step="0.5" inputmode="decimal" /></label>
       </div>
     </fieldset>
 
@@ -372,7 +372,7 @@
     </fieldset>
 
     <div class="actions no-print">
-      <button type="button" class="primary" id="saveBtn">Save</button>
+      <button type="button" class="primary" id="saveBtn">Submit</button>
       <button type="button" class="hidden-control" id="printBtn">Print</button>
       <button type="button" class="hidden-control" id="shareBtn">Share</button>
       <button type="button" class="hidden-control danger" id="clearBtn">Clear</button>
@@ -388,10 +388,27 @@
     const shareBtn = document.getElementById('shareBtn');
     const clearBtn = document.getElementById('clearBtn');
     const saveStatus = document.getElementById('saveStatus');
-    const storageKey = 'jnw-standalone-mobile-job-order';
+    const storageKey = 'jnw-standalone-mobile-job-order-v4';
+    // Paste the Power Automate HTTP trigger URL here after creating the shared submit flow.
+    const submitEndpoint = '';
     const signatureCanvases = ['customerSignature', 'technicianSignature'];
 
     const setStatus = (message) => { saveStatus.textContent = message; };
+    const formatJobNumber = (number) => {
+      const parsedNumber = Number.parseInt(number, 10);
+      return Number.isFinite(parsedNumber) ? String(Math.max(1, parsedNumber)).padStart(2, '0') : String(number);
+    };
+    const setJobOrderNumber = (number = '') => {
+      form.elements.jobOrder.value = number ? formatJobNumber(number) : 'Pending';
+    };
+    const todayDateValue = () => {
+      const today = new Date();
+      today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+      return today.toISOString().slice(0, 10);
+    };
+    const setCurrentDate = () => {
+      form.elements.date.value = todayDateValue();
+    };
     const moneyValue = (value) => {
       const number = Number.parseFloat(value);
       return Number.isFinite(number) ? number : 0;
@@ -424,6 +441,74 @@
       if (showMessage) {
         setStatus(`Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
       }
+    };
+
+    const clearSignatures = () => {
+      signatureCanvases.forEach((id) => {
+        const canvas = document.getElementById(id);
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+      });
+    };
+
+    const prepareBlankJobOrder = () => {
+      form.reset();
+      setJobOrderNumber();
+      setCurrentDate();
+      partsList.querySelectorAll('.part-row').forEach((row) => row.remove());
+      addPartRow();
+      clearSignatures();
+      calculateTotal();
+      saveDraft();
+    };
+
+    const printJobOrder = (jobNumber) => {
+      saveDraft();
+      const originalTitle = document.title;
+      document.title = `JNW Job Order ${jobNumber}`;
+      window.print();
+      document.title = originalTitle;
+    };
+
+    const submitJobOrder = async () => {
+      if (!submitEndpoint) {
+        alert('Shared submit is not connected yet. Add the Power Automate submit URL in index.html.');
+        return;
+      }
+
+      saveBtn.disabled = true;
+      setStatus('Submitting job order...');
+
+      try {
+        const response = await fetch(submitEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body: JSON.stringify(collectData()),
+        });
+        if (!response.ok) throw new Error(`Submit failed: ${response.status}`);
+
+        const result = await response.json();
+        const jobNumber = result.jobOrder || result.jobOrderNumber || result.id;
+        if (!jobNumber) throw new Error('Submit response did not include a job order number.');
+
+        setJobOrderNumber(jobNumber);
+        printJobOrder(form.elements.jobOrder.value);
+        setStatus(`Submitted job order ${form.elements.jobOrder.value}.`);
+        localStorage.removeItem(storageKey);
+        prepareBlankJobOrder();
+      } catch (error) {
+        setStatus('Submit failed. Please check the shared submit connection.');
+        alert(error.message);
+      } finally {
+        saveBtn.disabled = false;
+      }
+    };
+
+    const saveAsPdf = () => {
+      const jobNumber = form.elements.jobOrder.value || 'Draft';
+      printJobOrder(jobNumber);
+      localStorage.removeItem(storageKey);
+      prepareBlankJobOrder();
+      setStatus(`Printed job order ${jobNumber}.`);
     };
 
     const addPartRow = (part = {}) => {
@@ -513,8 +598,7 @@
     const loadDraft = () => {
       const raw = localStorage.getItem(storageKey);
       if (!raw) {
-        addPartRow();
-        calculateTotal();
+        prepareBlankJobOrder();
         return;
       }
       try {
@@ -523,6 +607,8 @@
           if (key === 'parts' || key === 'signatures') return;
           if (form.elements[key]) form.elements[key].value = value;
         });
+        setJobOrderNumber(form.elements.jobOrder.value === 'Pending' ? '' : form.elements.jobOrder.value);
+        setCurrentDate();
         (data.parts?.length ? data.parts : [{}]).forEach(addPartRow);
         requestAnimationFrame(() => signatureCanvases.forEach((id) => restoreSignature(id, data.signatures?.[id])));
         calculateTotal();
@@ -539,7 +625,7 @@
       addPartRow();
       saveDraft(true);
     });
-    saveBtn.addEventListener('click', () => saveDraft(true));
+    saveBtn.addEventListener('click', submitJobOrder);
     printBtn.addEventListener('click', () => {
       saveDraft();
       window.print();
@@ -558,14 +644,7 @@
     clearBtn.addEventListener('click', () => {
       if (!confirm('Clear this job order draft on this device?')) return;
       localStorage.removeItem(storageKey);
-      form.reset();
-      partsList.querySelectorAll('.part-row').forEach((row) => row.remove());
-      addPartRow();
-      signatureCanvases.forEach((id) => {
-        const canvas = document.getElementById(id);
-        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-      });
-      calculateTotal();
+      prepareBlankJobOrder();
       setStatus('Draft cleared.');
     });
     document.querySelectorAll('.clear-sign').forEach((button) => {
