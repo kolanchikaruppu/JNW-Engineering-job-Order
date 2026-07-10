@@ -97,6 +97,10 @@
     .actions .primary {
       width: min(220px, 70%);
     }
+    .actions .secondary {
+      min-width: 120px;
+      padding: 0 1rem;
+    }
     .primary {
       background: var(--primary);
       border-color: var(--primary);
@@ -204,6 +208,72 @@
       padding: 0 0.65rem;
       color: var(--accent);
     }
+    .history-panel {
+      display: grid;
+      gap: 0.75rem;
+      margin: 0.9rem 1rem;
+      padding: 0.8rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .history-panel[hidden] {
+      display: none;
+    }
+    .history-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+    .history-title {
+      color: #111;
+      font-size: 0.95rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .history-tools {
+      display: flex;
+      gap: 0.45rem;
+    }
+    .history-tools button {
+      min-height: 34px;
+      padding: 0 0.7rem;
+    }
+    .history-list {
+      display: grid;
+      gap: 0.55rem;
+    }
+    .history-empty {
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .history-card {
+      display: grid;
+      gap: 0.35rem;
+      padding: 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+    .history-card strong {
+      color: #111;
+      font-size: 0.9rem;
+    }
+    .history-card span,
+    .history-card p {
+      margin: 0;
+      color: var(--text);
+      font-size: 0.88rem;
+    }
+    .history-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem 0.85rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
     canvas {
       width: 100%;
       min-height: 150px;
@@ -238,6 +308,10 @@
       }
       .actions button {
         flex: 0 1 220px;
+      }
+      .history-head {
+        align-items: flex-start;
+        flex-direction: column;
       }
       fieldset {
         margin: 0.85rem 0.75rem;
@@ -452,8 +526,20 @@
       </div>
     </fieldset>
 
+    <section class="history-panel no-print" id="historyPanel" hidden>
+      <div class="history-head">
+        <div class="history-title">History</div>
+        <div class="history-tools">
+          <button type="button" id="clearHistoryBtn" class="danger">Clear History</button>
+          <button type="button" id="closeHistoryBtn">Close</button>
+        </div>
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </section>
+
     <div class="actions no-print">
       <button type="button" class="primary" id="saveBtn">Save</button>
+      <button type="button" class="secondary" id="historyBtn">History</button>
       <button type="button" class="hidden-control" id="printBtn">Print</button>
       <button type="button" class="hidden-control" id="shareBtn">Share</button>
       <button type="button" class="hidden-control danger" id="clearBtn">Clear</button>
@@ -465,12 +551,18 @@
     const partsList = document.getElementById('partsList');
     const addPartBtn = document.getElementById('addPartBtn');
     const saveBtn = document.getElementById('saveBtn');
+    const historyBtn = document.getElementById('historyBtn');
     const printBtn = document.getElementById('printBtn');
     const shareBtn = document.getElementById('shareBtn');
     const clearBtn = document.getElementById('clearBtn');
+    const historyPanel = document.getElementById('historyPanel');
+    const historyList = document.getElementById('historyList');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+    const closeHistoryBtn = document.getElementById('closeHistoryBtn');
     const saveStatus = document.getElementById('saveStatus');
     const storageKey = 'jnw-standalone-mobile-job-order-v5';
     const sequenceKey = 'jnw-standalone-mobile-job-order-next-number';
+    const historyKey = 'jnw-standalone-mobile-job-order-history';
     const signatureCanvases = ['customerSignature', 'technicianSignature'];
 
     const setStatus = (message) => { saveStatus.textContent = message; };
@@ -525,6 +617,64 @@
       return data;
     };
 
+    const collectHistoryEntry = () => {
+      const data = collectData();
+      delete data.signatures;
+      data.savedAt = new Date().toISOString();
+      return data;
+    };
+
+    const readHistory = () => {
+      try {
+        const history = JSON.parse(localStorage.getItem(historyKey) || '[]');
+        return Array.isArray(history) ? history : [];
+      } catch {
+        return [];
+      }
+    };
+
+    const writeHistory = (history) => {
+      localStorage.setItem(historyKey, JSON.stringify(history.slice(0, 100)));
+    };
+
+    const saveHistoryEntry = () => {
+      const entry = collectHistoryEntry();
+      const history = readHistory().filter((item) => item.jobOrder !== entry.jobOrder);
+      writeHistory([entry, ...history]);
+    };
+
+    const renderHistory = () => {
+      const history = readHistory();
+      if (!history.length) {
+        historyList.innerHTML = '<div class="history-empty">No saved job orders on this device.</div>';
+        return;
+      }
+
+      historyList.innerHTML = history.map((entry) => {
+        const parts = (entry.parts || [])
+          .filter((part) => part.description || part.charge)
+          .map((part) => `${escapeAttr(part.serial)}. ${escapeAttr(part.description)}${part.charge ? ` - Qty ${escapeAttr(part.charge)}` : ''}`)
+          .join('<br>');
+        const savedDate = entry.savedAt ? new Date(entry.savedAt).toLocaleString() : '';
+        return `
+          <article class="history-card">
+            <strong>Job Order ${escapeAttr(entry.jobOrder)}</strong>
+            <div class="history-meta">
+              <span>Date: ${escapeAttr(entry.date)}</span>
+              <span>Saved: ${escapeAttr(savedDate)}</span>
+            </div>
+            <p><strong>Company:</strong> ${escapeAttr(entry.company)}</p>
+            <p><strong>Requested By:</strong> ${escapeAttr(entry.requestedBy)}</p>
+            <p><strong>Complaint:</strong> ${escapeAttr(entry.complaint)}</p>
+            <p><strong>Action Taken:</strong> ${escapeAttr(entry.actionTaken)}</p>
+            <p><strong>Materials:</strong><br>${parts || 'None'}</p>
+            <p><strong>Labour:</strong> ${escapeAttr(entry.labourDescription)} ${escapeAttr(entry.labourMan)} man ${escapeAttr(entry.labourHours)} hours</p>
+            <p><strong>Remarks:</strong> ${escapeAttr(entry.remarks)}</p>
+          </article>
+        `;
+      }).join('');
+    };
+
     const saveDraft = (showMessage = false) => {
       calculateTotal();
       localStorage.setItem(storageKey, JSON.stringify(collectData()));
@@ -561,6 +711,7 @@
 
     const saveAsPdf = () => {
       const jobNumber = form.elements.jobOrder.value || formatJobNumber(nextJobNumber());
+      saveHistoryEntry();
       printJobOrder(jobNumber);
       const nextNumber = advanceJobOrderNumber();
       localStorage.removeItem(storageKey);
@@ -691,6 +842,20 @@
       saveDraft(true);
     });
     saveBtn.addEventListener('click', saveAsPdf);
+    historyBtn.addEventListener('click', () => {
+      renderHistory();
+      historyPanel.hidden = !historyPanel.hidden;
+      if (!historyPanel.hidden) historyPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+    closeHistoryBtn.addEventListener('click', () => {
+      historyPanel.hidden = true;
+    });
+    clearHistoryBtn.addEventListener('click', () => {
+      if (!confirm('Clear job order history saved on this device?')) return;
+      localStorage.removeItem(historyKey);
+      renderHistory();
+      setStatus('History cleared.');
+    });
     printBtn.addEventListener('click', () => {
       saveDraft();
       window.print();
