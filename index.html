@@ -267,7 +267,17 @@
       }
     }
     @media print {
-      body { background: #fff; font-size: 11px; }
+      @page { size: A4 portrait; margin: 7mm; }
+      *, *::before, *::after {
+        box-shadow: none !important;
+      }
+      html,
+      body {
+        width: 100%;
+        background: #fff;
+        font-size: 8.5px;
+        line-height: 1.2;
+      }
       .no-print { display: none !important; }
       .app {
         width: 100%;
@@ -275,24 +285,80 @@
         border: 0;
         box-shadow: none;
       }
-      .topbar { padding: 0 0 0.2in; }
+      .topbar {
+        padding: 0 0 0.07in;
+        border-bottom-width: 1px;
+      }
+      .brand img { width: 1.9in; }
+      .job-number {
+        gap: 0.02in;
+        min-width: 1.35in;
+      }
+      .job-number input {
+        font-size: 15px;
+        padding: 0.01in 0;
+      }
       fieldset {
         break-inside: avoid;
-        margin: 0 0 0.1in;
+        gap: 0.035in;
+        margin: 0 0 0.045in;
         padding: 0;
+      }
+      legend {
+        padding: 0;
+        font-size: 10px;
+        line-height: 1.1;
+      }
+      label,
+      .canvas-head {
+        gap: 0.015in;
+      }
+      label span,
+      .job-number label,
+      .canvas-head span,
+      .parts-head {
+        font-size: 8px;
+        line-height: 1.1;
+      }
+      .grid {
+        gap: 0.055in;
       }
       input,
       textarea {
-        border: 0;
-        border-bottom: 1px solid #333;
-        border-radius: 0;
-        padding: 0.04in 0.02in;
+        border: 1px solid #b8c1cc;
+        border-radius: 2px;
+        font-size: 9px;
+        line-height: 1.2;
+        padding: 0.035in 0.045in;
       }
-      textarea { min-height: 0.5in; }
+      textarea {
+        min-height: 0.34in;
+        resize: none;
+      }
+      textarea[name="complaint"] { min-height: 0.42in; }
+      textarea[name="actionTaken"] { min-height: 0.62in; }
+      textarea[name="remarks"] { min-height: 0.42in; }
+      .parts-table {
+        gap: 0.025in;
+      }
+      .parts-head,
+      .part-row {
+        grid-template-columns: 0.55in minmax(0, 1fr) 0.95in 0;
+        gap: 0.055in;
+      }
+      .part-row input {
+        min-height: 0.27in;
+      }
+      .signature-grid {
+        gap: 0.12in;
+      }
+      .canvas-head {
+        margin-bottom: 0.025in;
+      }
       canvas {
-        height: 0.85in !important;
+        height: 0.72in !important;
         min-height: 0;
-        border-color: #333;
+        border-color: #b8c1cc;
       }
     }
   </style>
