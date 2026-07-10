@@ -286,11 +286,17 @@
         box-shadow: none;
       }
       .topbar {
+        display: flex;
+        align-items: center;
+        flex-direction: row;
+        justify-content: space-between;
+        gap: 0.12in;
         padding: 0 0 0.07in;
         border-bottom-width: 1px;
       }
       .brand img { width: 1.9in; }
       .job-number {
+        width: auto;
         gap: 0.02in;
         min-width: 1.35in;
       }
@@ -323,6 +329,12 @@
       .grid {
         gap: 0.055in;
       }
+      .two {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
       input,
       textarea {
         border: 1px solid #b8c1cc;
@@ -345,11 +357,24 @@
       .part-row {
         grid-template-columns: 0.55in minmax(0, 1fr) 0.95in 0;
         gap: 0.055in;
+        align-items: center;
+      }
+      .part-row {
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: #fff;
+      }
+      .part-row input[name="partDescription"],
+      .part-row input[name="partCharge"],
+      .part-row .remove-row {
+        grid-column: auto;
       }
       .part-row input {
         min-height: 0.27in;
       }
       .signature-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 0.12in;
       }
       .canvas-head {
