@@ -372,7 +372,7 @@
     </fieldset>
 
     <div class="actions no-print">
-      <button type="button" class="primary" id="saveBtn">Submit</button>
+      <button type="button" class="primary" id="saveBtn">Save</button>
       <button type="button" class="hidden-control" id="printBtn">Print</button>
       <button type="button" class="hidden-control" id="shareBtn">Share</button>
       <button type="button" class="hidden-control danger" id="clearBtn">Clear</button>
@@ -388,9 +388,8 @@
     const shareBtn = document.getElementById('shareBtn');
     const clearBtn = document.getElementById('clearBtn');
     const saveStatus = document.getElementById('saveStatus');
-    const storageKey = 'jnw-standalone-mobile-job-order-v4';
-    // Paste the Power Automate HTTP trigger URL here after creating the shared submit flow.
-    const submitEndpoint = '';
+    const storageKey = 'jnw-standalone-mobile-job-order-v5';
+    const sequenceKey = 'jnw-standalone-mobile-job-order-next-number';
     const signatureCanvases = ['customerSignature', 'technicianSignature'];
 
     const setStatus = (message) => { saveStatus.textContent = message; };
@@ -398,8 +397,18 @@
       const parsedNumber = Number.parseInt(number, 10);
       return Number.isFinite(parsedNumber) ? String(Math.max(1, parsedNumber)).padStart(2, '0') : String(number);
     };
-    const setJobOrderNumber = (number = '') => {
-      form.elements.jobOrder.value = number ? formatJobNumber(number) : 'Pending';
+    const nextJobNumber = () => {
+      const storedNumber = Number.parseInt(localStorage.getItem(sequenceKey), 10);
+      return Number.isFinite(storedNumber) && storedNumber > 0 ? storedNumber : 1;
+    };
+    const setJobOrderNumber = (number = nextJobNumber()) => {
+      form.elements.jobOrder.value = formatJobNumber(number);
+    };
+    const advanceJobOrderNumber = () => {
+      const currentNumber = Number.parseInt(form.elements.jobOrder.value, 10) || nextJobNumber();
+      const nextNumber = currentNumber + 1;
+      localStorage.setItem(sequenceKey, String(nextNumber));
+      return nextNumber;
     };
     const todayDateValue = () => {
       const today = new Date();
@@ -450,9 +459,9 @@
       });
     };
 
-    const prepareBlankJobOrder = () => {
+    const prepareBlankJobOrder = (number = nextJobNumber()) => {
       form.reset();
-      setJobOrderNumber();
+      setJobOrderNumber(number);
       setCurrentDate();
       partsList.querySelectorAll('.part-row').forEach((row) => row.remove());
       addPartRow();
@@ -469,46 +478,13 @@
       document.title = originalTitle;
     };
 
-    const submitJobOrder = async () => {
-      if (!submitEndpoint) {
-        alert('Shared submit is not connected yet. Add the Power Automate submit URL in index.html.');
-        return;
-      }
-
-      saveBtn.disabled = true;
-      setStatus('Submitting job order...');
-
-      try {
-        const response = await fetch(submitEndpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify(collectData()),
-        });
-        if (!response.ok) throw new Error(`Submit failed: ${response.status}`);
-
-        const result = await response.json();
-        const jobNumber = result.jobOrder || result.jobOrderNumber || result.id;
-        if (!jobNumber) throw new Error('Submit response did not include a job order number.');
-
-        setJobOrderNumber(jobNumber);
-        printJobOrder(form.elements.jobOrder.value);
-        setStatus(`Submitted job order ${form.elements.jobOrder.value}.`);
-        localStorage.removeItem(storageKey);
-        prepareBlankJobOrder();
-      } catch (error) {
-        setStatus('Submit failed. Please check the shared submit connection.');
-        alert(error.message);
-      } finally {
-        saveBtn.disabled = false;
-      }
-    };
-
     const saveAsPdf = () => {
-      const jobNumber = form.elements.jobOrder.value || 'Draft';
+      const jobNumber = form.elements.jobOrder.value || formatJobNumber(nextJobNumber());
       printJobOrder(jobNumber);
+      const nextNumber = advanceJobOrderNumber();
       localStorage.removeItem(storageKey);
-      prepareBlankJobOrder();
-      setStatus(`Printed job order ${jobNumber}.`);
+      prepareBlankJobOrder(nextNumber);
+      setStatus(`Saved job order ${jobNumber}. Next job order ${formatJobNumber(nextNumber)} is ready.`);
     };
 
     const addPartRow = (part = {}) => {
@@ -607,7 +583,7 @@
           if (key === 'parts' || key === 'signatures') return;
           if (form.elements[key]) form.elements[key].value = value;
         });
-        setJobOrderNumber(form.elements.jobOrder.value === 'Pending' ? '' : form.elements.jobOrder.value);
+        setJobOrderNumber(form.elements.jobOrder.value || nextJobNumber());
         setCurrentDate();
         (data.parts?.length ? data.parts : [{}]).forEach(addPartRow);
         requestAnimationFrame(() => signatureCanvases.forEach((id) => restoreSignature(id, data.signatures?.[id])));
@@ -625,7 +601,7 @@
       addPartRow();
       saveDraft(true);
     });
-    saveBtn.addEventListener('click', submitJobOrder);
+    saveBtn.addEventListener('click', saveAsPdf);
     printBtn.addEventListener('click', () => {
       saveDraft();
       window.print();
