@@ -578,21 +578,29 @@
       setStatus(`Saved job order ${jobNumber}. Next job order ${formatJobNumber(nextNumber)} is ready.`);
     };
 
+    const renumberPartRows = () => {
+      partsList.querySelectorAll('.part-row').forEach((row, index) => {
+        row.querySelector('[name="partSerial"]').value = index + 1;
+      });
+    };
+
     const addPartRow = (part = {}) => {
       const row = document.createElement('div');
       row.className = 'part-row';
       row.innerHTML = `
-        <input name="partSerial" inputmode="numeric" aria-label="Serial number" value="${escapeAttr(part.serial)}" />
+        <input name="partSerial" inputmode="numeric" aria-label="Serial number" value="${escapeAttr(part.serial)}" readonly />
         <input name="partDescription" aria-label="Material or part used" value="${escapeAttr(part.description)}" />
         <input name="partCharge" type="number" min="0" step="1" inputmode="numeric" aria-label="Quantity" value="${escapeAttr(part.charge)}" />
         <button type="button" class="remove-row no-print" aria-label="Remove item">Remove</button>
       `;
       row.querySelector('.remove-row').addEventListener('click', () => {
         row.remove();
+        renumberPartRows();
         saveDraft(true);
       });
       row.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => saveDraft()));
       partsList.append(row);
+      renumberPartRows();
     };
 
     const restoreSignature = (id, imageData) => {
