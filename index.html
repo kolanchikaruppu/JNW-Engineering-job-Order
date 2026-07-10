@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>JNW Mobile Job Order</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    :root {
+      --primary: #17466f;
+      --primary-dark: #0f304d;
+      --accent: #c82f2f;
+      --text: #222;
+      --muted: #606975;
+      --surface: #f4f6f8;
+      --border: #d8dee6;
+      --radius: 4px;
+      --font: "Segoe UI", Arial, sans-serif;
+    }
+    body {
+      margin: 0;
+      background: #eef2f5;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 16px;
+      line-height: 1.5;
+    }
+    .app {
+      width: min(980px, calc(100% - 1rem));
+      margin: 1rem auto 2rem;
+      background: #fff;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 24px rgba(20, 35, 50, 0.08);
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem;
+      border-bottom: 2px solid var(--primary-dark);
+    }
+    .brand img {
+      width: 300px;
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+    .job-number {
+      display: grid;
+      gap: 0.25rem;
+      min-width: 190px;
+    }
+    label span,
+    .job-number label,
+    .canvas-head span {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .job-number label {
+      color: var(--primary-dark);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+    .job-number input {
+      color: var(--accent);
+      border: 0;
+      border-bottom: 2px solid var(--border);
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      padding: 0.15rem 0;
+    }
+    .actions {
+      position: static;
+      display: flex;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 1.2rem 1rem 1.6rem;
+      background: #fff;
+      border-bottom: 0;
+    }
+    button {
+      min-height: 42px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+      color: var(--primary-dark);
+      cursor: pointer;
+      font-family: var(--font);
+      font-weight: 700;
+    }
+    .actions .primary {
+      width: min(220px, 70%);
+    }
+    .primary {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+    .danger { color: var(--accent); }
+    .hidden-control {
+      display: none;
+    }
+    .status {
+      display: none;
+    }
+    fieldset {
+      display: grid;
+      gap: 0.85rem;
+      margin: 0.9rem 1rem;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: #fff;
+    }
+    legend {
+      padding: 0 0.4rem;
+      color: var(--primary-dark);
+      font-size: 0.9rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    label,
+    .canvas-head {
+      display: grid;
+      gap: 0.3rem;
+    }
+    input,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 1rem;
+      padding: 0.72rem 0.78rem;
+    }
+    textarea {
+      min-height: 88px;
+      resize: vertical;
+    }
+    input:focus,
+    textarea:focus {
+      outline: 2px solid rgba(23, 70, 111, 0.16);
+      border-color: var(--primary);
+    }
+    input[readonly] {
+      background: var(--surface);
+      font-weight: 800;
+    }
+    .plain-label > span {
+      display: inline;
+    }
+    .grid {
+      display: grid;
+      gap: 0.85rem;
+    }
+    .two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .parts-table {
+      display: grid;
+      gap: 0.45rem;
+    }
+    .parts-head,
+    .part-row {
+      display: grid;
+      grid-template-columns: 72px minmax(0, 1fr) 130px 86px;
+      gap: 0.45rem;
+      align-items: center;
+    }
+    .parts-head {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .parts-head span:nth-child(3) { grid-column: span 2; }
+    .add-row {
+      justify-self: start;
+      padding: 0 0.85rem;
+    }
+    .remove-row,
+    .clear-sign {
+      display: none;
+    }
+    .remove-row {
+      font-size: 0.8rem;
+    }
+    .signature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+    .canvas-head {
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      margin-bottom: 0.35rem;
+    }
+    .clear-sign {
+      min-height: 34px;
+      padding: 0 0.65rem;
+      color: var(--accent);
+    }
+    canvas {
+      width: 100%;
+      min-height: 150px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: linear-gradient(#fff 92%, #e6ebf0 92%);
+      touch-action: none;
+    }
+    @media (max-width: 760px) {
+      body { background: #fff; }
+      .app {
+        width: 100%;
+        margin: 0;
+        border: 0;
+        box-shadow: none;
+      }
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 0.9rem;
+      }
+      .brand img {
+        width: 230px;
+      }
+      .job-number {
+        width: 100%;
+        min-width: 0;
+      }
+      .actions {
+        display: flex;
+        padding: 0.6rem 0.9rem;
+      }
+      .actions button {
+        flex: 0 1 220px;
+      }
+      fieldset {
+        margin: 0.85rem 0.75rem;
+        padding: 0;
+      }
+      .two,
+      .three,
+      .signature-grid {
+        grid-template-columns: 1fr;
+      }
+      .part-row {
+        grid-template-columns: 68px 1fr;
+        padding: 0.7rem;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--surface);
+      }
+      .part-row input[name="partDescription"],
+      .part-row input[name="partCharge"],
+      .part-row .remove-row {
+        grid-column: 1 / -1;
+      }
+    }
+    @media print {
+      body { background: #fff; font-size: 11px; }
+      .no-print { display: none !important; }
+      .app {
+        width: 100%;
+        margin: 0;
+        border: 0;
+        box-shadow: none;
+      }
+      .topbar { padding: 0 0 0.2in; }
+      fieldset {
+        break-inside: avoid;
+        margin: 0 0 0.1in;
+        padding: 0;
+      }
+      input,
+      textarea {
+        border: 0;
+        border-bottom: 1px solid #333;
+        border-radius: 0;
+        padding: 0.04in 0.02in;
+      }
+      textarea { min-height: 0.5in; }
+      canvas {
+        height: 0.85in !important;
+        min-height: 0;
+        border-color: #333;
+      }
+    }
+  </style>
+</head>
+<body>
+  <form class="app" id="jobForm">
+    <div class="topbar">
+      <div class="brand">
+        <img src="JNW.png" alt="JNW Engineering Pte Ltd" />
+      </div>
+      <div class="job-number">
+        <label for="jobOrder">Job Order</label>
+        <input id="jobOrder" name="jobOrder" inputmode="numeric" value="0017293" />
+      </div>
+    </div>
+
+    <p class="status no-print" id="saveStatus" role="status" aria-live="polite">Draft saves on this device.</p>
+
+    <fieldset>
+      <legend>Customer Details</legend>
+      <div class="grid two">
+        <label><span>Company</span><input name="company" autocomplete="organization" value="The Soy Company" /></label>
+        <label><span>Date</span><input name="date" type="date" value="2025-12-28" /></label>
+        <label><span>Requested By</span><input name="requestedBy" autocomplete="name" /></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Work Report</legend>
+      <label><span>Complaint</span><textarea name="complaint" rows="3">Boiler cannot run.</textarea></label>
+      <label><span>Action Taken</span><textarea name="actionTaken" rows="5">Supplied main power and tested. Serviced burner and checked oil supply. Test OK.</textarea></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Materials and Parts Used</legend>
+      <div class="parts-table" id="partsList">
+        <div class="parts-head">
+          <span>S/No</span>
+          <span>Materials and Parts Used</span>
+          <span>Quantity</span>
+        </div>
+      </div>
+      <button type="button" class="add-row no-print" id="addPartBtn">Add item</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Labour</legend>
+      <div class="grid three">
+        <label><span>Labour Description</span><input name="labourDescription" value="Labour" /></label>
+        <label><span>Man</span><input name="labourMan" type="number" min="0" step="1" inputmode="numeric" /></label>
+        <label><span>Hours</span><input name="labourHours" type="number" min="0" step="0.5" inputmode="decimal" value="4" /></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <label><span>Remarks</span><textarea name="remarks" rows="3"></textarea></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Signatures</legend>
+      <div class="signature-grid">
+        <div>
+          <div class="canvas-head">
+            <span>Customer Signature and Chop</span>
+            <button type="button" class="clear-sign no-print" data-clear="customerSignature">Clear</button>
+          </div>
+          <canvas id="customerSignature" width="600" height="220"></canvas>
+        </div>
+        <div>
+          <div class="canvas-head">
+            <span>Technician Signature</span>
+            <button type="button" class="clear-sign no-print" data-clear="technicianSignature">Clear</button>
+          </div>
+          <canvas id="technicianSignature" width="600" height="220"></canvas>
+        </div>
+      </div>
+    </fieldset>
+
+    <div class="actions no-print">
+      <button type="button" class="primary" id="saveBtn">Save</button>
+      <button type="button" class="hidden-control" id="printBtn">Print</button>
+      <button type="button" class="hidden-control" id="shareBtn">Share</button>
+      <button type="button" class="hidden-control danger" id="clearBtn">Clear</button>
+    </div>
+  </form>
+
+  <script>
+    const form = document.getElementById('jobForm');
+    const partsList = document.getElementById('partsList');
+    const addPartBtn = document.getElementById('addPartBtn');
+    const saveBtn = document.getElementById('saveBtn');
+    const printBtn = document.getElementById('printBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const saveStatus = document.getElementById('saveStatus');
+    const storageKey = 'jnw-standalone-mobile-job-order';
+    const signatureCanvases = ['customerSignature', 'technicianSignature'];
+
+    const setStatus = (message) => { saveStatus.textContent = message; };
+    const moneyValue = (value) => {
+      const number = Number.parseFloat(value);
+      return Number.isFinite(number) ? number : 0;
+    };
+    const escapeAttr = (value) => String(value || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+    const calculateTotal = () => {
+      const partTotal = Array.from(partsList.querySelectorAll('[name="partCharge"]'))
+        .reduce((sum, input) => sum + moneyValue(input.value), 0);
+      return partTotal;
+    };
+
+    const collectData = () => {
+      const data = Object.fromEntries(new FormData(form).entries());
+      data.parts = Array.from(partsList.querySelectorAll('.part-row')).map((row) => ({
+        serial: row.querySelector('[name="partSerial"]').value,
+        description: row.querySelector('[name="partDescription"]').value,
+        charge: row.querySelector('[name="partCharge"]').value,
+      }));
+      data.signatures = Object.fromEntries(signatureCanvases.map((id) => {
+        const canvas = document.getElementById(id);
+        return [id, canvas.toDataURL('image/png')];
+      }));
+      return data;
+    };
+
+    const saveDraft = (showMessage = false) => {
+      calculateTotal();
+      localStorage.setItem(storageKey, JSON.stringify(collectData()));
+      if (showMessage) {
+        setStatus(`Saved ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      }
+    };
+
+    const addPartRow = (part = {}) => {
+      const row = document.createElement('div');
+      row.className = 'part-row';
+      row.innerHTML = `
+        <input name="partSerial" inputmode="numeric" aria-label="Serial number" value="${escapeAttr(part.serial)}" />
+        <input name="partDescription" aria-label="Material or part used" value="${escapeAttr(part.description)}" />
+        <input name="partCharge" type="number" min="0" step="1" inputmode="numeric" aria-label="Quantity" value="${escapeAttr(part.charge)}" />
+        <button type="button" class="remove-row no-print" aria-label="Remove item">Remove</button>
+      `;
+      row.querySelector('.remove-row').addEventListener('click', () => {
+        row.remove();
+        saveDraft(true);
+      });
+      row.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => saveDraft()));
+      partsList.append(row);
+    };
+
+    const restoreSignature = (id, imageData) => {
+      if (!imageData) return;
+      const canvas = document.getElementById(id);
+      const context = canvas.getContext('2d');
+      const image = new Image();
+      image.onload = () => {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width / window.devicePixelRatio, canvas.height / window.devicePixelRatio);
+      };
+      image.src = imageData;
+    };
+
+    const setupSignature = (id) => {
+      const canvas = document.getElementById(id);
+      const context = canvas.getContext('2d');
+      let drawing = false;
+
+      const resizeCanvas = () => {
+        const image = canvas.toDataURL('image/png');
+        const width = canvas.offsetWidth;
+        const height = Math.max(150, Math.round(width * 0.34));
+        canvas.width = width * window.devicePixelRatio;
+        canvas.height = height * window.devicePixelRatio;
+        canvas.style.height = `${height}px`;
+        context.scale(window.devicePixelRatio, window.devicePixelRatio);
+        context.lineWidth = 2;
+        context.lineCap = 'round';
+        context.strokeStyle = '#111';
+        restoreSignature(id, image);
+      };
+
+      const point = (event) => {
+        const rect = canvas.getBoundingClientRect();
+        const touch = event.touches?.[0] || event;
+        return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+      };
+      const start = (event) => {
+        event.preventDefault();
+        drawing = true;
+        const p = point(event);
+        context.beginPath();
+        context.moveTo(p.x, p.y);
+      };
+      const move = (event) => {
+        if (!drawing) return;
+        event.preventDefault();
+        const p = point(event);
+        context.lineTo(p.x, p.y);
+        context.stroke();
+      };
+      const stop = () => {
+        if (!drawing) return;
+        drawing = false;
+        saveDraft(true);
+      };
+
+      canvas.addEventListener('mousedown', start);
+      canvas.addEventListener('mousemove', move);
+      canvas.addEventListener('mouseup', stop);
+      canvas.addEventListener('mouseleave', stop);
+      canvas.addEventListener('touchstart', start, { passive: false });
+      canvas.addEventListener('touchmove', move, { passive: false });
+      canvas.addEventListener('touchend', stop);
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+    };
+
+    const loadDraft = () => {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        addPartRow();
+        calculateTotal();
+        return;
+      }
+      try {
+        const data = JSON.parse(raw);
+        Object.entries(data).forEach(([key, value]) => {
+          if (key === 'parts' || key === 'signatures') return;
+          if (form.elements[key]) form.elements[key].value = value;
+        });
+        (data.parts?.length ? data.parts : [{}]).forEach(addPartRow);
+        requestAnimationFrame(() => signatureCanvases.forEach((id) => restoreSignature(id, data.signatures?.[id])));
+        calculateTotal();
+        setStatus('Draft restored from this device.');
+      } catch {
+        addPartRow();
+        calculateTotal();
+        setStatus('Draft could not be restored.');
+      }
+    };
+
+    form.addEventListener('input', () => saveDraft());
+    addPartBtn.addEventListener('click', () => {
+      addPartRow();
+      saveDraft(true);
+    });
+    saveBtn.addEventListener('click', () => saveDraft(true));
+    printBtn.addEventListener('click', () => {
+      saveDraft();
+      window.print();
+    });
+    shareBtn.addEventListener('click', async () => {
+      saveDraft();
+      const data = collectData();
+        const text = `JNW Job Order ${data.jobOrder || ''}\nCompany: ${data.company || ''}\nDate: ${data.date || ''}\nComplaint: ${data.complaint || ''}\nAction Taken: ${data.actionTaken || ''}`;
+      if (navigator.share) {
+        await navigator.share({ title: `JNW Job Order ${data.jobOrder || ''}`, text });
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      setStatus('Job summary copied.');
+    });
+    clearBtn.addEventListener('click', () => {
+      if (!confirm('Clear this job order draft on this device?')) return;
+      localStorage.removeItem(storageKey);
+      form.reset();
+      partsList.querySelectorAll('.part-row').forEach((row) => row.remove());
+      addPartRow();
+      signatureCanvases.forEach((id) => {
+        const canvas = document.getElementById(id);
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+      });
+      calculateTotal();
+      setStatus('Draft cleared.');
+    });
+    document.querySelectorAll('.clear-sign').forEach((button) => {
+      button.addEventListener('click', () => {
+        const canvas = document.getElementById(button.dataset.clear);
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        saveDraft(true);
+      });
+    });
+
+    signatureCanvases.forEach(setupSignature);
+    loadDraft();
+  </script>
+</body>
+</html>
