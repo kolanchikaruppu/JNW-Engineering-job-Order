@@ -573,7 +573,14 @@
     const sequenceKey = 'jnw-standalone-mobile-job-order-next-number';
     const historyKey = 'jnw-standalone-mobile-job-order-history';
     const signatureCanvases = ['customerSignature', 'technicianSignature'];
+    const officeServerUrl = 'http://192.168.10.38:4322/';
+    const isGithubPage = location.hostname.endsWith('github.io');
     const isServerMode = location.protocol === 'http:' || location.protocol === 'https:';
+
+    if (isGithubPage) {
+      document.body.innerHTML = '<main style="font-family: Segoe UI, Arial, sans-serif; padding: 24px; line-height: 1.5;"><h1>Opening JNW Job Order...</h1><p>Please wait. This page will open the office Job Order server.</p><p><a href="' + officeServerUrl + '">Open JNW Job Order</a></p></main>';
+      location.replace(officeServerUrl);
+    }
 
     const setStatus = (message) => { saveStatus.textContent = message; };
     const formatJobNumber = (number) => {
