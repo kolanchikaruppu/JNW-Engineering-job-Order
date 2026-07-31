@@ -86,6 +86,18 @@ const cleanFilePart = (value) => String(value || '')
   .replace(/\s+/g, ' ')
   .slice(0, 60);
 
+const formatDateForFile = (value, fallbackDate = new Date()) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+
+  const parsed = value ? new Date(value) : fallbackDate;
+  if (Number.isNaN(parsed.getTime())) return fallbackDate.toISOString().slice(0, 10);
+  const day = String(parsed.getDate()).padStart(2, '0');
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const year = parsed.getFullYear();
+  return `${day}-${month}-${year}`;
+};
+
 const normaliseParts = (parts) => Array.isArray(parts)
   ? parts.map((part, index) => ({
       serial: part.serial || String(index + 1),
@@ -234,9 +246,8 @@ const saveSubmission = async (payload) => {
   const nextJobOrder = nextNumber + 1;
   const submittedAt = new Date().toISOString();
   const companyPart = cleanFilePart(payload.company) || 'No Company';
-  const datePart = submittedAt.replace(/[:.]/g, '-');
-  const baseName = `${jobOrder}_${datePart}_${companyPart}`;
-  const htmlFile = `${baseName}.html`;
+  const datePart = formatDateForFile(payload.date, new Date(submittedAt));
+  const baseName = `JO ${jobOrder} _ ${companyPart} _ ${datePart}`;
   const jsonFile = `${baseName}.json`;
   const pdfFile = `${baseName}.pdf`;
   const data = { ...payload, jobOrder, submittedAt };
