@@ -874,6 +874,10 @@
     };
 
     const loadDraft = () => {
+      localStorage.removeItem(storageKey);
+      prepareBlankJobOrder();
+      return;
+
       const raw = localStorage.getItem(storageKey);
       if (!raw) {
         prepareBlankJobOrder();

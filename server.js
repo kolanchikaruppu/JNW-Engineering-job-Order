@@ -274,7 +274,10 @@ const serveStatic = async (request, response) => {
 
   try {
     const file = await fs.readFile(filePath);
-    response.writeHead(200, { 'Content-Type': mimeTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream' });
+    response.writeHead(200, {
+      'Content-Type': mimeTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream',
+      'Cache-Control': 'no-store',
+    });
     response.end(file);
   } catch {
     response.writeHead(404);
