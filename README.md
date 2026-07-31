@@ -22,8 +22,7 @@ Reports/
 
 Each submission creates:
 
-- an `.html` report for viewing/printing
+- a `.pdf` Job Order report for viewing/printing
 - a `.json` data file
-- a row in `Job_Order_Log.csv`
 
 Do not upload the `Reports` folder to GitHub because it contains real job records.

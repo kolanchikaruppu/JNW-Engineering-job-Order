@@ -2,6 +2,7 @@ const http = require('http');
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
+const { execFile } = require('child_process');
 
 const PORT = Number(process.env.PORT || 4322);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -9,6 +10,8 @@ const ROOT = __dirname;
 const REPORTS_DIR = path.join(ROOT, 'Reports');
 const SEQUENCE_FILE = path.join(REPORTS_DIR, '.sequence.json');
 const LOG_FILE = path.join(REPORTS_DIR, 'Job_Order_Log.csv');
+const PYTHON = process.env.PYTHON || path.join(os.homedir(), '.cache', 'codex-runtimes', 'codex-primary-runtime', 'dependencies', 'python', 'python.exe');
+const PDF_SCRIPT = path.join(ROOT, 'generate_pdf.py');
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -56,6 +59,16 @@ const readSequence = async () => {
 const writeSequence = async (nextJobOrder) => {
   await fs.writeFile(SEQUENCE_FILE, JSON.stringify({ nextJobOrder }, null, 2));
 };
+
+const createPdf = (jsonPath, pdfPath) => new Promise((resolve, reject) => {
+  execFile(PYTHON, [PDF_SCRIPT, jsonPath, pdfPath], { cwd: ROOT }, (error, stdout, stderr) => {
+    if (error) {
+      reject(new Error(stderr || stdout || error.message));
+      return;
+    }
+    resolve();
+  });
+});
 
 const formatJobOrder = (number) => String(Math.max(1, Number(number) || 1)).padStart(2, '0');
 
@@ -225,14 +238,16 @@ const saveSubmission = async (payload) => {
   const baseName = `${jobOrder}_${datePart}_${companyPart}`;
   const htmlFile = `${baseName}.html`;
   const jsonFile = `${baseName}.json`;
+  const pdfFile = `${baseName}.pdf`;
   const data = { ...payload, jobOrder, submittedAt };
+  const jsonPath = path.join(REPORTS_DIR, jsonFile);
+  const pdfPath = path.join(REPORTS_DIR, pdfFile);
 
-  await fs.writeFile(path.join(REPORTS_DIR, htmlFile), makeReportHtml(data), 'utf8');
-  await fs.writeFile(path.join(REPORTS_DIR, jsonFile), JSON.stringify(data, null, 2), 'utf8');
-  await appendCsv(data, htmlFile, jsonFile);
+  await fs.writeFile(jsonPath, JSON.stringify(data, null, 2), 'utf8');
+  await createPdf(jsonPath, pdfPath);
   await writeSequence(nextJobOrder);
 
-  return { jobOrder, nextJobOrder: formatJobOrder(nextJobOrder), htmlFile, jsonFile };
+  return { jobOrder, nextJobOrder: formatJobOrder(nextJobOrder), pdfFile, jsonFile };
 };
 
 const serveStatic = async (request, response) => {
