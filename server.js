@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
@@ -95,6 +96,38 @@ const normaliseParts = (parts) => Array.isArray(parts)
       quantity: part.quantity || part.charge || '',
     })).filter((part) => part.description || part.quantity)
   : [];
+
+const webRequest = (url, options = {}) => new Promise((resolve, reject) => {
+  const target = new URL(url);
+  const transport = target.protocol === 'http:' ? http : https;
+  const body = options.body
+    ? (Buffer.isBuffer(options.body) ? options.body : Buffer.from(String(options.body)))
+    : null;
+
+  const request = transport.request(target, {
+    method: options.method || 'GET',
+    headers: {
+      ...(options.headers || {}),
+      ...(body ? { 'Content-Length': body.length } : {}),
+    },
+  }, (response) => {
+    const chunks = [];
+    response.on('data', (chunk) => chunks.push(chunk));
+    response.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+      resolve({
+        ok: response.statusCode >= 200 && response.statusCode < 300,
+        status: response.statusCode,
+        text: () => Promise.resolve(buffer.toString('utf8')),
+        json: () => Promise.resolve(JSON.parse(buffer.toString('utf8'))),
+      });
+    });
+  });
+
+  request.on('error', reject);
+  if (body) request.write(body);
+  request.end();
+});
 
 const pdfEscape = (value) => String(value || '')
   .replace(/\\/g, '\\\\')
@@ -201,7 +234,7 @@ const getGraphToken = async () => {
   }
 
   const resource = encodeURIComponent('https://graph.microsoft.com/');
-  const response = await fetch(`http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=${resource}`, {
+  const response = await webRequest(`http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=${resource}`, {
     headers: { Metadata: 'true' },
   });
 
@@ -219,7 +252,7 @@ const getGraphToken = async () => {
 
 const graphRequest = async (url, options = {}) => {
   const token = await getGraphToken();
-  const response = await fetch(`${GRAPH_BASE_URL}${url}`, {
+  const response = await webRequest(`${GRAPH_BASE_URL}${url}`, {
     ...options,
     headers: {
       Authorization: `Bearer ${token}`,
