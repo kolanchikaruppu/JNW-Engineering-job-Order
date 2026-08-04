@@ -2,8 +2,6 @@ const http = require('http');
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
-const PDFDocument = require('pdfkit');
-const { DefaultAzureCredential } = require('@azure/identity');
 
 const PORT = Number(process.env.PORT || 4322);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -13,7 +11,6 @@ const SEQUENCE_FILE = path.join(REPORTS_DIR, '.sequence.json');
 const LOG_FILE = path.join(REPORTS_DIR, 'Job_Order_Log.csv');
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
-const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';
 const GRAPH_SITE_HOSTNAME = process.env.GRAPH_SITE_HOSTNAME || 'jnwengineering.sharepoint.com';
 const GRAPH_SITE_PATH = process.env.GRAPH_SITE_PATH || '/';
 const GRAPH_DOCUMENT_LIBRARY = process.env.GRAPH_DOCUMENT_LIBRARY || 'Documents';
@@ -99,120 +96,125 @@ const normaliseParts = (parts) => Array.isArray(parts)
     })).filter((part) => part.description || part.quantity)
   : [];
 
-const addText = (doc, text, x, y, options = {}) => {
-  doc.text(String(text || ''), x, y, options);
-};
+const pdfEscape = (value) => String(value || '')
+  .replace(/\\/g, '\\\\')
+  .replace(/\(/g, '\\(')
+  .replace(/\)/g, '\\)')
+  .replace(/\r?\n/g, ' ');
 
-const addBox = (doc, label, value, x, y, width, height = 34) => {
-  doc.font('Helvetica-Bold').fontSize(9).fillColor('#4f5d6d').text(label, x, y);
-  doc.roundedRect(x, y + 13, width, height, 3).strokeColor('#d4dce5').stroke();
-  doc.font('Helvetica').fontSize(12).fillColor('#111111').text(String(value || ''), x + 8, y + 23, {
-    width: width - 16,
-    height: height - 10,
+const wrapText = (value, maxChars = 88) => {
+  const words = String(value || '').replace(/\r?\n/g, ' ').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  words.forEach((word) => {
+    if ((line + ' ' + word).trim().length > maxChars) {
+      if (line) lines.push(line);
+      line = word;
+    } else {
+      line = `${line} ${word}`.trim();
+    }
   });
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
 };
 
-const addMultilineBox = (doc, label, value, x, y, width, height) => {
-  doc.font('Helvetica-Bold').fontSize(9).fillColor('#4f5d6d').text(label, x, y);
-  doc.roundedRect(x, y + 13, width, height, 3).strokeColor('#d4dce5').stroke();
-  doc.font('Helvetica').fontSize(11).fillColor('#111111').text(String(value || ''), x + 8, y + 23, {
-    width: width - 16,
-    height: height - 10,
-  });
-};
+const createPdfBuffer = (data) => {
+  const lines = [];
+  const text = (x, y, size, value, font = 'F1') => {
+    lines.push(`BT /${font} ${size} Tf ${x} ${y} Td (${pdfEscape(value)}) Tj ET`);
+  };
+  const rect = (x, y, w, h) => {
+    lines.push(`${x} ${y} ${w} ${h} re S`);
+  };
+  const label = (x, y, value) => text(x, y, 9, value, 'F2');
+  const box = (x, y, w, h, labelText, value, maxChars = 40) => {
+    label(x, y + h + 7, labelText);
+    rect(x, y, w, h);
+    wrapText(value, maxChars).slice(0, Math.max(1, Math.floor(h / 13))).forEach((line, index) => {
+      text(x + 7, y + h - 16 - (index * 13), 11, line);
+    });
+  };
 
-const drawSignature = (doc, label, dataUrl, x, y, width, height) => {
-  doc.font('Helvetica-Bold').fontSize(9).fillColor('#4f5d6d').text(label, x, y);
-  doc.roundedRect(x, y + 13, width, height, 3).strokeColor('#d4dce5').stroke();
-  doc.rect(x, y + 13 + height - 10, width, 10).fillColor('#e8edf2').fill();
-  if (!dataUrl) return;
+  lines.push('0.5 w');
+  text(28, 785, 18, 'JNW ENGINEERING PTE LTD', 'F2');
+  text(390, 790, 11, 'JOB ORDER', 'F2');
+  text(390, 765, 22, data.jobOrder, 'F2');
+  lines.push('28 742 m 567 742 l S');
 
-  const base64 = String(dataUrl).split(',')[1];
-  if (!base64) return;
-  try {
-    const image = Buffer.from(base64, 'base64');
-    doc.image(image, x + 8, y + 21, { fit: [width - 16, height - 22], align: 'center', valign: 'center' });
-  } catch {
-    // Keep the PDF valid even if a phone submits a damaged signature image.
-  }
-};
+  box(28, 692, 250, 34, 'COMPANY', data.company);
+  box(310, 692, 250, 34, 'DATE', data.date);
+  box(28, 640, 250, 34, 'REQUESTED BY', data.requestedBy);
+  box(28, 532, 532, 78, 'COMPLAINT', data.complaint, 92);
+  box(28, 397, 532, 105, 'ACTION TAKEN', data.actionTaken, 92);
 
-const createPdfBuffer = async (data) => new Promise(async (resolve, reject) => {
-  const chunks = [];
-  const doc = new PDFDocument({ size: 'A4', margin: 28 });
-  doc.on('data', (chunk) => chunks.push(chunk));
-  doc.on('end', () => resolve(Buffer.concat(chunks)));
-  doc.on('error', reject);
-
-  const pageWidth = doc.page.width - 56;
-  const logoPath = path.join(ROOT, 'JNW.png');
-
-  try {
-    await fs.access(logoPath);
-    doc.image(logoPath, 28, 25, { width: 190 });
-  } catch {
-    doc.font('Helvetica-Bold').fontSize(18).fillColor('#0f304d').text('JNW ENGINEERING PTE LTD', 28, 42);
-  }
-
-  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f304d').text('JOB ORDER', 390, 32);
-  doc.font('Helvetica-Bold').fontSize(24).fillColor('#c92d2d').text(data.jobOrder, 390, 52, { characterSpacing: 2 });
-  doc.moveTo(28, 88).lineTo(doc.page.width - 28, 88).lineWidth(1.6).strokeColor('#0f304d').stroke();
-
-  const col = (pageWidth - 18) / 2;
-  addBox(doc, 'COMPANY', data.company, 28, 108, col);
-  addBox(doc, 'DATE', data.date, 28 + col + 18, 108, col);
-  addBox(doc, 'REQUESTED BY', data.requestedBy, 28, 158, col);
-  addMultilineBox(doc, 'COMPLAINT', data.complaint, 28, 218, pageWidth, 68);
-  addMultilineBox(doc, 'ACTION TAKEN', data.actionTaken, 28, 306, pageWidth, 100);
-
-  doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f304d').text('MATERIALS AND PARTS USED', 28, 432);
+  text(28, 370, 12, 'MATERIALS AND PARTS USED', 'F2');
+  label(28, 350, 'S/NO');
+  label(85, 350, 'MATERIALS AND PARTS USED');
+  label(475, 350, 'QUANTITY');
+  let rowY = 316;
   const parts = normaliseParts(data.parts);
-  const tableY = 452;
-  const serialW = 48;
-  const qtyW = 86;
-  const descW = pageWidth - serialW - qtyW;
-  doc.font('Helvetica-Bold').fontSize(9).fillColor('#4f5d6d');
-  addText(doc, 'S/NO', 28, tableY);
-  addText(doc, 'MATERIALS AND PARTS USED', 28 + serialW, tableY);
-  addText(doc, 'QUANTITY', 28 + serialW + descW, tableY);
-  let rowY = tableY + 16;
-  const rows = parts.length ? parts : [{ serial: '1', description: '', quantity: '' }];
-  rows.slice(0, 8).forEach((part) => {
-    doc.roundedRect(28, rowY, serialW - 4, 28, 3).strokeColor('#d4dce5').stroke();
-    doc.roundedRect(28 + serialW, rowY, descW - 8, 28, 3).stroke();
-    doc.roundedRect(28 + serialW + descW, rowY, qtyW, 28, 3).stroke();
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#111111').text(String(part.serial || ''), 38, rowY + 8);
-    doc.font('Helvetica').fontSize(11).text(String(part.description || ''), 28 + serialW + 8, rowY + 8, { width: descW - 24 });
-    doc.text(String(part.quantity || ''), 28 + serialW + descW + 8, rowY + 8, { width: qtyW - 16 });
-    rowY += 34;
+  (parts.length ? parts : [{ serial: '1', description: '', quantity: '' }]).slice(0, 6).forEach((part) => {
+    box(28, rowY, 45, 26, '', part.serial, 5);
+    box(85, rowY, 375, 26, '', part.description, 62);
+    box(475, rowY, 85, 26, '', part.quantity, 12);
+    rowY -= 32;
   });
 
-  const labourY = rowY + 16;
-  doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f304d').text('LABOUR', 28, labourY);
-  const third = (pageWidth - 24) / 3;
-  addBox(doc, 'LABOUR DESCRIPTION', data.labourDescription, 28, labourY + 22, third);
-  addBox(doc, 'MAN', data.labourMan, 28 + third + 12, labourY + 22, third);
-  addBox(doc, 'HOURS', data.labourHours, 28 + (third + 12) * 2, labourY + 22, third);
-  addMultilineBox(doc, 'REMARKS', data.remarks, 28, labourY + 82, pageWidth, 70);
+  text(28, rowY + 7, 12, 'LABOUR', 'F2');
+  box(28, rowY - 45, 165, 32, 'LABOUR DESCRIPTION', data.labourDescription, 25);
+  box(210, rowY - 45, 165, 32, 'MAN', data.labourMan, 20);
+  box(395, rowY - 45, 165, 32, 'HOURS', data.labourHours, 20);
+  box(28, rowY - 145, 532, 68, 'REMARKS', data.remarks, 92);
 
-  const sigY = labourY + 178;
-  if (sigY > 620) doc.addPage();
-  const finalSigY = sigY > 620 ? 28 : sigY;
-  doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f304d').text('SIGNATURES', 28, finalSigY);
-  drawSignature(doc, 'CUSTOMER SIGNATURE AND CHOP', data.signatures?.customerSignature, 28, finalSigY + 22, col, 115);
-  drawSignature(doc, 'TECHNICIAN SIGNATURE', data.signatures?.technicianSignature, 28 + col + 18, finalSigY + 22, col, 115);
+  text(28, rowY - 174, 12, 'SIGNATURES', 'F2');
+  box(28, rowY - 305, 250, 105, 'CUSTOMER SIGNATURE AND CHOP', '', 40);
+  box(310, rowY - 305, 250, 105, 'TECHNICIAN SIGNATURE', '', 40);
 
-  doc.end();
-});
+  const content = lines.join('\n');
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>',
+    `<< /Length ${Buffer.byteLength(content, 'utf8')} >>\nstream\n${content}\nendstream`,
+  ];
+
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'));
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  });
+  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(pdf, 'utf8');
+};
 
 const getGraphToken = async () => {
-  if (graphTokenCache && graphTokenCache.expiresOnTimestamp > Date.now() + 120000) {
+  if (graphTokenCache && graphTokenCache.expiresOn > Date.now() + 120000) {
     return graphTokenCache.token;
   }
-  const credential = new DefaultAzureCredential();
-  const token = await credential.getToken(GRAPH_SCOPE);
-  graphTokenCache = token;
-  return token.token;
+
+  const resource = encodeURIComponent('https://graph.microsoft.com/');
+  const response = await fetch(`http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=${resource}`, {
+    headers: { Metadata: 'true' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not get Azure identity token (${response.status}).`);
+  }
+
+  const token = await response.json();
+  graphTokenCache = {
+    token: token.access_token,
+    expiresOn: Number(token.expires_on) * 1000,
+  };
+  return graphTokenCache.token;
 };
 
 const graphRequest = async (url, options = {}) => {
@@ -284,12 +286,11 @@ const uploadPdfToOneDrive = async (fileName, pdfBuffer) => {
   const { driveId } = await resolveDrive();
   await ensureFolderPath(driveId, GRAPH_FOLDER_PATH);
   const uploadPath = encodeSharePointPath(`${GRAPH_FOLDER_PATH}/${fileName}`);
-  const file = await graphRequest(`/drives/${driveId}/root:/${uploadPath}:/content`, {
+  return graphRequest(`/drives/${driveId}/root:/${uploadPath}:/content`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/pdf' },
     body: pdfBuffer,
   });
-  return file;
 };
 
 const appendCsv = async (data, pdfFile, jsonFile) => {
@@ -354,7 +355,7 @@ const saveSubmission = async (payload) => {
   const pdfFile = `${baseName}.pdf`;
   const data = { ...payload, jobOrder, submittedAt };
 
-  const pdfBuffer = await createPdfBuffer(data);
+  const pdfBuffer = createPdfBuffer(data);
   const uploadedFile = await uploadPdfToOneDrive(pdfFile, pdfBuffer);
   await saveLocalBackup(jsonFile, data, pdfFile, pdfBuffer);
   await appendCsv(data, pdfFile, jsonFile);

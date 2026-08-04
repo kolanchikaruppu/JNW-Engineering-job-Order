@@ -4,9 +4,5 @@
   "private": true,
   "scripts": {
     "start": "node server.js"
-  },
-  "dependencies": {
-    "@azure/identity": "^4.10.2",
-    "pdfkit": "^0.17.1"
   }
 }
