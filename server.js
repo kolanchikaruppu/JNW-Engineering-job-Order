@@ -2,7 +2,8 @@ const http = require('http');
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
-const { execFile } = require('child_process');
+const PDFDocument = require('pdfkit');
+const { DefaultAzureCredential } = require('@azure/identity');
 
 const PORT = Number(process.env.PORT || 4322);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -10,8 +11,16 @@ const ROOT = __dirname;
 const REPORTS_DIR = path.join(ROOT, 'Reports');
 const SEQUENCE_FILE = path.join(REPORTS_DIR, '.sequence.json');
 const LOG_FILE = path.join(REPORTS_DIR, 'Job_Order_Log.csv');
-const PYTHON = process.env.PYTHON || path.join(os.homedir(), '.cache', 'codex-runtimes', 'codex-primary-runtime', 'dependencies', 'python', 'python.exe');
-const PDF_SCRIPT = path.join(ROOT, 'generate_pdf.py');
+
+const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
+const GRAPH_SCOPE = 'https://graph.microsoft.com/.default';
+const GRAPH_SITE_HOSTNAME = process.env.GRAPH_SITE_HOSTNAME || 'jnwengineering.sharepoint.com';
+const GRAPH_SITE_PATH = process.env.GRAPH_SITE_PATH || '/';
+const GRAPH_DOCUMENT_LIBRARY = process.env.GRAPH_DOCUMENT_LIBRARY || 'Documents';
+const GRAPH_FOLDER_PATH = process.env.GRAPH_FOLDER_PATH || 'Job Order Reports';
+
+let graphTokenCache = null;
+let graphDriveCache = null;
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -60,23 +69,7 @@ const writeSequence = async (nextJobOrder) => {
   await fs.writeFile(SEQUENCE_FILE, JSON.stringify({ nextJobOrder }, null, 2));
 };
 
-const createPdf = (jsonPath, pdfPath) => new Promise((resolve, reject) => {
-  execFile(PYTHON, [PDF_SCRIPT, jsonPath, pdfPath], { cwd: ROOT }, (error, stdout, stderr) => {
-    if (error) {
-      reject(new Error(stderr || stdout || error.message));
-      return;
-    }
-    resolve();
-  });
-});
-
 const formatJobOrder = (number) => String(Math.max(1, Number(number) || 1)).padStart(2, '0');
-
-const escapeHtml = (value) => String(value || '')
-  .replaceAll('&', '&amp;')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;');
 
 const csvCell = (value) => `"${String(value || '').replaceAll('"', '""')}"`;
 
@@ -106,97 +99,201 @@ const normaliseParts = (parts) => Array.isArray(parts)
     })).filter((part) => part.description || part.quantity)
   : [];
 
-const makeReportHtml = (data) => {
-  const parts = normaliseParts(data.parts);
-  const partRows = parts.length
-    ? parts.map((part) => `
-      <tr>
-        <td>${escapeHtml(part.serial)}</td>
-        <td>${escapeHtml(part.description)}</td>
-        <td>${escapeHtml(part.quantity)}</td>
-      </tr>`).join('')
-    : '<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>';
-
-  const signature = (title, value) => value
-    ? `<section><h3>${title}</h3><img class="signature" src="${escapeHtml(value)}" alt="${title}" /></section>`
-    : `<section><h3>${title}</h3><div class="signature blank"></div></section>`;
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>JNW Job Order ${escapeHtml(data.jobOrder)}</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 24px; color: #111; font-family: "Segoe UI", Arial, sans-serif; }
-    .page { max-width: 900px; margin: 0 auto; }
-    header { display: flex; justify-content: space-between; gap: 24px; align-items: center; border-bottom: 3px solid #0f304d; padding-bottom: 18px; margin-bottom: 22px; }
-    .logo { width: 290px; max-width: 55%; }
-    .job h1 { margin: 0 0 8px; color: #0f304d; font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; }
-    .job strong { color: #c82f2f; font-size: 34px; letter-spacing: 0.1em; }
-    h2 { margin: 24px 0 8px; color: #0f304d; font-size: 18px; text-transform: uppercase; }
-    h3, label { margin: 0 0 6px; color: #606975; font-size: 13px; text-transform: uppercase; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-    .three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .field, textarea, table, .signature { border: 1px solid #d8dee6; border-radius: 4px; }
-    .field { min-height: 46px; padding: 12px; font-size: 18px; }
-    .text { min-height: 105px; white-space: pre-wrap; }
-    table { width: 100%; border-collapse: collapse; overflow: hidden; }
-    th, td { border-bottom: 1px solid #d8dee6; padding: 10px; text-align: left; vertical-align: top; }
-    th { color: #606975; font-size: 13px; text-transform: uppercase; }
-    th:first-child, td:first-child { width: 80px; }
-    th:last-child, td:last-child { width: 150px; }
-    .signature-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-    .signature { width: 100%; height: 170px; object-fit: contain; display: block; background: #fff; }
-    .blank { background: linear-gradient(#fff 92%, #e6ebf0 92%); }
-    @media print { body { padding: 10mm; } .page { max-width: none; } }
-  </style>
-</head>
-<body>
-  <main class="page">
-    <header>
-      <img class="logo" src="../JNW.png" alt="JNW Engineering Pte Ltd" />
-      <div class="job"><h1>Job Order</h1><strong>${escapeHtml(data.jobOrder)}</strong></div>
-    </header>
-
-    <h2>Customer Details</h2>
-    <div class="grid">
-      <section><label>Company</label><div class="field">${escapeHtml(data.company)}</div></section>
-      <section><label>Date</label><div class="field">${escapeHtml(data.date)}</div></section>
-      <section><label>Requested By</label><div class="field">${escapeHtml(data.requestedBy)}</div></section>
-    </div>
-
-    <h2>Work Report</h2>
-    <section><label>Complaint</label><div class="field text">${escapeHtml(data.complaint)}</div></section>
-    <section><label>Action Taken</label><div class="field text">${escapeHtml(data.actionTaken)}</div></section>
-
-    <h2>Materials and Parts Used</h2>
-    <table>
-      <thead><tr><th>S/No</th><th>Materials and Parts Used</th><th>Quantity</th></tr></thead>
-      <tbody>${partRows}</tbody>
-    </table>
-
-    <h2>Labour</h2>
-    <div class="grid three">
-      <section><label>Labour Description</label><div class="field">${escapeHtml(data.labourDescription)}</div></section>
-      <section><label>Man</label><div class="field">${escapeHtml(data.labourMan)}</div></section>
-      <section><label>Hours</label><div class="field">${escapeHtml(data.labourHours)}</div></section>
-    </div>
-
-    <h2>Remarks</h2>
-    <div class="field text">${escapeHtml(data.remarks)}</div>
-
-    <h2>Signatures</h2>
-    <div class="signature-grid">
-      ${signature('Customer Signature and Chop', data.signatures?.customerSignature)}
-      ${signature('Technician Signature', data.signatures?.technicianSignature)}
-    </div>
-  </main>
-</body>
-</html>`;
+const addText = (doc, text, x, y, options = {}) => {
+  doc.text(String(text || ''), x, y, options);
 };
 
-const appendCsv = async (data, htmlFile, jsonFile) => {
+const addBox = (doc, label, value, x, y, width, height = 34) => {
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#4f5d6d').text(label, x, y);
+  doc.roundedRect(x, y + 13, width, height, 3).strokeColor('#d4dce5').stroke();
+  doc.font('Helvetica').fontSize(12).fillColor('#111111').text(String(value || ''), x + 8, y + 23, {
+    width: width - 16,
+    height: height - 10,
+  });
+};
+
+const addMultilineBox = (doc, label, value, x, y, width, height) => {
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#4f5d6d').text(label, x, y);
+  doc.roundedRect(x, y + 13, width, height, 3).strokeColor('#d4dce5').stroke();
+  doc.font('Helvetica').fontSize(11).fillColor('#111111').text(String(value || ''), x + 8, y + 23, {
+    width: width - 16,
+    height: height - 10,
+  });
+};
+
+const drawSignature = (doc, label, dataUrl, x, y, width, height) => {
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#4f5d6d').text(label, x, y);
+  doc.roundedRect(x, y + 13, width, height, 3).strokeColor('#d4dce5').stroke();
+  doc.rect(x, y + 13 + height - 10, width, 10).fillColor('#e8edf2').fill();
+  if (!dataUrl) return;
+
+  const base64 = String(dataUrl).split(',')[1];
+  if (!base64) return;
+  try {
+    const image = Buffer.from(base64, 'base64');
+    doc.image(image, x + 8, y + 21, { fit: [width - 16, height - 22], align: 'center', valign: 'center' });
+  } catch {
+    // Keep the PDF valid even if a phone submits a damaged signature image.
+  }
+};
+
+const createPdfBuffer = async (data) => new Promise(async (resolve, reject) => {
+  const chunks = [];
+  const doc = new PDFDocument({ size: 'A4', margin: 28 });
+  doc.on('data', (chunk) => chunks.push(chunk));
+  doc.on('end', () => resolve(Buffer.concat(chunks)));
+  doc.on('error', reject);
+
+  const pageWidth = doc.page.width - 56;
+  const logoPath = path.join(ROOT, 'JNW.png');
+
+  try {
+    await fs.access(logoPath);
+    doc.image(logoPath, 28, 25, { width: 190 });
+  } catch {
+    doc.font('Helvetica-Bold').fontSize(18).fillColor('#0f304d').text('JNW ENGINEERING PTE LTD', 28, 42);
+  }
+
+  doc.font('Helvetica-Bold').fontSize(11).fillColor('#0f304d').text('JOB ORDER', 390, 32);
+  doc.font('Helvetica-Bold').fontSize(24).fillColor('#c92d2d').text(data.jobOrder, 390, 52, { characterSpacing: 2 });
+  doc.moveTo(28, 88).lineTo(doc.page.width - 28, 88).lineWidth(1.6).strokeColor('#0f304d').stroke();
+
+  const col = (pageWidth - 18) / 2;
+  addBox(doc, 'COMPANY', data.company, 28, 108, col);
+  addBox(doc, 'DATE', data.date, 28 + col + 18, 108, col);
+  addBox(doc, 'REQUESTED BY', data.requestedBy, 28, 158, col);
+  addMultilineBox(doc, 'COMPLAINT', data.complaint, 28, 218, pageWidth, 68);
+  addMultilineBox(doc, 'ACTION TAKEN', data.actionTaken, 28, 306, pageWidth, 100);
+
+  doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f304d').text('MATERIALS AND PARTS USED', 28, 432);
+  const parts = normaliseParts(data.parts);
+  const tableY = 452;
+  const serialW = 48;
+  const qtyW = 86;
+  const descW = pageWidth - serialW - qtyW;
+  doc.font('Helvetica-Bold').fontSize(9).fillColor('#4f5d6d');
+  addText(doc, 'S/NO', 28, tableY);
+  addText(doc, 'MATERIALS AND PARTS USED', 28 + serialW, tableY);
+  addText(doc, 'QUANTITY', 28 + serialW + descW, tableY);
+  let rowY = tableY + 16;
+  const rows = parts.length ? parts : [{ serial: '1', description: '', quantity: '' }];
+  rows.slice(0, 8).forEach((part) => {
+    doc.roundedRect(28, rowY, serialW - 4, 28, 3).strokeColor('#d4dce5').stroke();
+    doc.roundedRect(28 + serialW, rowY, descW - 8, 28, 3).stroke();
+    doc.roundedRect(28 + serialW + descW, rowY, qtyW, 28, 3).stroke();
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#111111').text(String(part.serial || ''), 38, rowY + 8);
+    doc.font('Helvetica').fontSize(11).text(String(part.description || ''), 28 + serialW + 8, rowY + 8, { width: descW - 24 });
+    doc.text(String(part.quantity || ''), 28 + serialW + descW + 8, rowY + 8, { width: qtyW - 16 });
+    rowY += 34;
+  });
+
+  const labourY = rowY + 16;
+  doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f304d').text('LABOUR', 28, labourY);
+  const third = (pageWidth - 24) / 3;
+  addBox(doc, 'LABOUR DESCRIPTION', data.labourDescription, 28, labourY + 22, third);
+  addBox(doc, 'MAN', data.labourMan, 28 + third + 12, labourY + 22, third);
+  addBox(doc, 'HOURS', data.labourHours, 28 + (third + 12) * 2, labourY + 22, third);
+  addMultilineBox(doc, 'REMARKS', data.remarks, 28, labourY + 82, pageWidth, 70);
+
+  const sigY = labourY + 178;
+  if (sigY > 620) doc.addPage();
+  const finalSigY = sigY > 620 ? 28 : sigY;
+  doc.font('Helvetica-Bold').fontSize(12).fillColor('#0f304d').text('SIGNATURES', 28, finalSigY);
+  drawSignature(doc, 'CUSTOMER SIGNATURE AND CHOP', data.signatures?.customerSignature, 28, finalSigY + 22, col, 115);
+  drawSignature(doc, 'TECHNICIAN SIGNATURE', data.signatures?.technicianSignature, 28 + col + 18, finalSigY + 22, col, 115);
+
+  doc.end();
+});
+
+const getGraphToken = async () => {
+  if (graphTokenCache && graphTokenCache.expiresOnTimestamp > Date.now() + 120000) {
+    return graphTokenCache.token;
+  }
+  const credential = new DefaultAzureCredential();
+  const token = await credential.getToken(GRAPH_SCOPE);
+  graphTokenCache = token;
+  return token.token;
+};
+
+const graphRequest = async (url, options = {}) => {
+  const token = await getGraphToken();
+  const response = await fetch(`${GRAPH_BASE_URL}${url}`, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(options.headers || {}),
+    },
+  });
+
+  if (response.ok) {
+    if (response.status === 204) return null;
+    return response.json();
+  }
+
+  const detail = await response.text();
+  throw new Error(`OneDrive upload failed (${response.status}). ${detail}`);
+};
+
+const encodeSharePointPath = (value) => String(value)
+  .split('/')
+  .filter(Boolean)
+  .map(encodeURIComponent)
+  .join('/');
+
+const resolveDrive = async () => {
+  if (graphDriveCache) return graphDriveCache;
+
+  const sitePath = GRAPH_SITE_PATH === '/' ? '' : `:${GRAPH_SITE_PATH}`;
+  const site = await graphRequest(`/sites/${GRAPH_SITE_HOSTNAME}${sitePath}`);
+  const drives = await graphRequest(`/sites/${site.id}/drives`);
+  const drive = (drives.value || []).find((item) => item.name === GRAPH_DOCUMENT_LIBRARY)
+    || (drives.value || [])[0];
+
+  if (!drive) {
+    throw new Error(`Could not find SharePoint document library "${GRAPH_DOCUMENT_LIBRARY}".`);
+  }
+
+  graphDriveCache = { siteId: site.id, driveId: drive.id };
+  return graphDriveCache;
+};
+
+const ensureFolderPath = async (driveId, folderPath) => {
+  const parts = String(folderPath || '').split('/').map((part) => part.trim()).filter(Boolean);
+  let currentPath = '';
+
+  for (const part of parts) {
+    const parentPath = currentPath ? `root:/${encodeSharePointPath(currentPath)}:` : 'root';
+    try {
+      await graphRequest(`/drives/${driveId}/${parentPath}/children`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: part,
+          folder: {},
+          '@microsoft.graph.conflictBehavior': 'fail',
+        }),
+      });
+    } catch (error) {
+      if (!String(error.message).includes('nameAlreadyExists')) throw error;
+    }
+    currentPath = currentPath ? `${currentPath}/${part}` : part;
+  }
+};
+
+const uploadPdfToOneDrive = async (fileName, pdfBuffer) => {
+  const { driveId } = await resolveDrive();
+  await ensureFolderPath(driveId, GRAPH_FOLDER_PATH);
+  const uploadPath = encodeSharePointPath(`${GRAPH_FOLDER_PATH}/${fileName}`);
+  const file = await graphRequest(`/drives/${driveId}/root:/${uploadPath}:/content`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/pdf' },
+    body: pdfBuffer,
+  });
+  return file;
+};
+
+const appendCsv = async (data, pdfFile, jsonFile) => {
+  await ensureReportsDir();
   const exists = await fs.access(LOG_FILE).then(() => true).catch(() => false);
   if (!exists) {
     await fs.writeFile(LOG_FILE, [
@@ -212,7 +309,7 @@ const appendCsv = async (data, htmlFile, jsonFile) => {
       'Man',
       'Hours',
       'Remarks',
-      'HTML File',
+      'PDF File',
       'JSON File',
     ].map(csvCell).join(',') + os.EOL);
   }
@@ -234,13 +331,18 @@ const appendCsv = async (data, htmlFile, jsonFile) => {
     data.labourMan,
     data.labourHours,
     data.remarks,
-    htmlFile,
+    pdfFile,
     jsonFile,
   ].map(csvCell).join(',') + os.EOL);
 };
 
-const saveSubmission = async (payload) => {
+const saveLocalBackup = async (jsonFile, data, pdfFile, pdfBuffer) => {
   await ensureReportsDir();
+  await fs.writeFile(path.join(REPORTS_DIR, jsonFile), JSON.stringify(data, null, 2), 'utf8');
+  await fs.writeFile(path.join(REPORTS_DIR, pdfFile), pdfBuffer);
+};
+
+const saveSubmission = async (payload) => {
   const nextNumber = await readSequence();
   const jobOrder = formatJobOrder(nextNumber);
   const nextJobOrder = nextNumber + 1;
@@ -251,14 +353,20 @@ const saveSubmission = async (payload) => {
   const jsonFile = `${baseName}.json`;
   const pdfFile = `${baseName}.pdf`;
   const data = { ...payload, jobOrder, submittedAt };
-  const jsonPath = path.join(REPORTS_DIR, jsonFile);
-  const pdfPath = path.join(REPORTS_DIR, pdfFile);
 
-  await fs.writeFile(jsonPath, JSON.stringify(data, null, 2), 'utf8');
-  await createPdf(jsonPath, pdfPath);
+  const pdfBuffer = await createPdfBuffer(data);
+  const uploadedFile = await uploadPdfToOneDrive(pdfFile, pdfBuffer);
+  await saveLocalBackup(jsonFile, data, pdfFile, pdfBuffer);
+  await appendCsv(data, pdfFile, jsonFile);
   await writeSequence(nextJobOrder);
 
-  return { jobOrder, nextJobOrder: formatJobOrder(nextJobOrder), pdfFile, jsonFile };
+  return {
+    jobOrder,
+    nextJobOrder: formatJobOrder(nextJobOrder),
+    pdfFile,
+    oneDriveFolder: `${GRAPH_DOCUMENT_LIBRARY}/${GRAPH_FOLDER_PATH}`,
+    webUrl: uploadedFile.webUrl,
+  };
 };
 
 const serveStatic = async (request, response) => {
@@ -312,5 +420,5 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`JNW Job Order server running at http://localhost:${PORT}/`);
-  console.log(`Reports save to: ${REPORTS_DIR}`);
+  console.log(`Reports upload to: ${GRAPH_DOCUMENT_LIBRARY}/${GRAPH_FOLDER_PATH}`);
 });

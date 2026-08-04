@@ -2,27 +2,30 @@
 
 Standalone mobile Job Order form for JNW Engineering.
 
-## Start
+## Link
 
-Double-click `Start Job Order Server.bat` on the office PC.
-
-Technicians open:
-
-```text
-http://192.168.10.38:4322/
-```
+Technicians open the Azure web app link.
 
 ## Reports
 
-When technicians press `Submit to OneDrive`, reports are saved in:
+When technicians press `Submit`, the completed report is saved as a PDF in company OneDrive/SharePoint:
 
 ```text
-Reports/
+Documents / Job Order Reports
 ```
 
-Each submission creates:
+PDF file name format:
 
-- a `.pdf` Job Order report for viewing/printing
-- a `.json` data file
+```text
+JO XX _ Customer Name _ Date.pdf
+```
 
-Do not upload the `Reports` folder to GitHub because it contains real job records.
+Example:
+
+```text
+JO 03 _ JNW _ 31-07-2026.pdf
+```
+
+## Notes
+
+The Azure web app needs SharePoint permission before submissions can upload PDFs.
