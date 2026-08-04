@@ -234,8 +234,15 @@ const getGraphToken = async () => {
   }
 
   const resource = encodeURIComponent('https://graph.microsoft.com/');
-  const response = await webRequest(`http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=${resource}`, {
-    headers: { Metadata: 'true' },
+  const identityEndpoint = process.env.IDENTITY_ENDPOINT || process.env.MSI_ENDPOINT;
+  const identityHeader = process.env.IDENTITY_HEADER || process.env.MSI_SECRET;
+  const tokenUrl = identityEndpoint
+    ? `${identityEndpoint}?api-version=2019-08-01&resource=${resource}`
+    : `http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=${resource}`;
+  const response = await webRequest(tokenUrl, {
+    headers: identityEndpoint
+      ? { 'X-IDENTITY-HEADER': identityHeader }
+      : { Metadata: 'true' },
   });
 
   if (!response.ok) {
