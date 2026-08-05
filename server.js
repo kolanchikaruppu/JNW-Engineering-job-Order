@@ -15,7 +15,7 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const GRAPH_SITE_HOSTNAME = process.env.GRAPH_SITE_HOSTNAME || 'jnwengineering.sharepoint.com';
 const GRAPH_SITE_PATH = process.env.GRAPH_SITE_PATH || '/';
 const GRAPH_DOCUMENT_LIBRARY = process.env.GRAPH_DOCUMENT_LIBRARY || 'Documents';
-const GRAPH_FOLDER_PATH = process.env.GRAPH_FOLDER_PATH || 'Job Order Reports';
+const GRAPH_FOLDER_PATH = process.env.GRAPH_FOLDER_PATH || 'Job Order Reports/{year}';
 
 let graphTokenCache = null;
 let graphDriveCache = null;
@@ -88,6 +88,19 @@ const formatDateForFile = (value, fallbackDate = new Date()) => {
   const year = parsed.getFullYear();
   return `${day}-${month}-${year}`;
 };
+
+const getReportYear = (value, fallbackDate = new Date()) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return match[1];
+
+  const parsed = value ? new Date(value) : fallbackDate;
+  const date = Number.isNaN(parsed.getTime()) ? fallbackDate : parsed;
+  return String(date.getFullYear());
+};
+
+const buildReportFolderPath = (data) => GRAPH_FOLDER_PATH
+  .replaceAll('{year}', getReportYear(data.date, new Date(data.submittedAt)))
+  .replaceAll('{yyyy}', getReportYear(data.date, new Date(data.submittedAt)));
 
 const normaliseParts = (parts) => Array.isArray(parts)
   ? parts.map((part, index) => ({
@@ -322,10 +335,10 @@ const ensureFolderPath = async (driveId, folderPath) => {
   }
 };
 
-const uploadPdfToOneDrive = async (fileName, pdfBuffer) => {
+const uploadPdfToOneDrive = async (fileName, pdfBuffer, folderPath) => {
   const { driveId } = await resolveDrive();
-  await ensureFolderPath(driveId, GRAPH_FOLDER_PATH);
-  const uploadPath = encodeSharePointPath(`${GRAPH_FOLDER_PATH}/${fileName}`);
+  await ensureFolderPath(driveId, folderPath);
+  const uploadPath = encodeSharePointPath(`${folderPath}/${fileName}`);
   return graphRequest(`/drives/${driveId}/root:/${uploadPath}:/content`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/pdf' },
@@ -396,7 +409,8 @@ const saveSubmission = async (payload) => {
   const data = { ...payload, jobOrder, submittedAt };
 
   const pdfBuffer = createPdfBuffer(data);
-  const uploadedFile = await uploadPdfToOneDrive(pdfFile, pdfBuffer);
+  const reportFolderPath = buildReportFolderPath(data);
+  const uploadedFile = await uploadPdfToOneDrive(pdfFile, pdfBuffer, reportFolderPath);
   await saveLocalBackup(jsonFile, data, pdfFile, pdfBuffer);
   await appendCsv(data, pdfFile, jsonFile);
   await writeSequence(nextJobOrder);
@@ -405,7 +419,7 @@ const saveSubmission = async (payload) => {
     jobOrder,
     nextJobOrder: formatJobOrder(nextJobOrder),
     pdfFile,
-    oneDriveFolder: `${GRAPH_DOCUMENT_LIBRARY}/${GRAPH_FOLDER_PATH}`,
+    oneDriveFolder: `${GRAPH_DOCUMENT_LIBRARY}/${reportFolderPath}`,
     webUrl: uploadedFile.webUrl,
   };
 };
