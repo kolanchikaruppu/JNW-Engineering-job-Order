@@ -11,11 +11,11 @@ Technicians open the Azure web app link.
 When technicians press `Submit`, the completed report is saved as a PDF in company OneDrive/SharePoint:
 
 ```text
-Documents / Job Order Reports / 2026
+Documents / Mobile Job Order Reports / 2026
 ```
 
 The year folder is created automatically from the job order date. For example,
-2027 reports go to `Documents / Job Order Reports / 2027`.
+2027 reports go to `Documents / Mobile Job Order Reports / 2027`.
 
 PDF file name format:
 

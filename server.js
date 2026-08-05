@@ -15,7 +15,7 @@ const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
 const GRAPH_SITE_HOSTNAME = process.env.GRAPH_SITE_HOSTNAME || 'jnwengineering.sharepoint.com';
 const GRAPH_SITE_PATH = process.env.GRAPH_SITE_PATH || '/';
 const GRAPH_DOCUMENT_LIBRARY = process.env.GRAPH_DOCUMENT_LIBRARY || 'Documents';
-const GRAPH_FOLDER_PATH = process.env.GRAPH_FOLDER_PATH || 'Job Order Reports/{year}';
+const GRAPH_FOLDER_PATH = process.env.GRAPH_FOLDER_PATH || 'Mobile Job Order Reports/{year}';
 const GRAPH_DRIVE_ID = process.env.GRAPH_DRIVE_ID || '';
 
 let graphTokenCache = null;
