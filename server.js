@@ -16,6 +16,7 @@ const GRAPH_SITE_HOSTNAME = process.env.GRAPH_SITE_HOSTNAME || 'jnwengineering.s
 const GRAPH_SITE_PATH = process.env.GRAPH_SITE_PATH || '/';
 const GRAPH_DOCUMENT_LIBRARY = process.env.GRAPH_DOCUMENT_LIBRARY || 'Documents';
 const GRAPH_FOLDER_PATH = process.env.GRAPH_FOLDER_PATH || 'Job Order Reports/{year}';
+const GRAPH_DRIVE_ID = process.env.GRAPH_DRIVE_ID || '';
 
 let graphTokenCache = null;
 let graphDriveCache = null;
@@ -298,6 +299,11 @@ const encodeSharePointPath = (value) => String(value)
 const resolveDrive = async () => {
   if (graphDriveCache) return graphDriveCache;
 
+  if (GRAPH_DRIVE_ID) {
+    graphDriveCache = { driveId: GRAPH_DRIVE_ID, libraryName: 'OneDrive' };
+    return graphDriveCache;
+  }
+
   const sitePath = GRAPH_SITE_PATH === '/' ? '' : `:${GRAPH_SITE_PATH}`;
   const site = await graphRequest(`/sites/${GRAPH_SITE_HOSTNAME}${sitePath}`);
   const drives = await graphRequest(`/sites/${site.id}/drives`);
@@ -308,7 +314,7 @@ const resolveDrive = async () => {
     throw new Error(`Could not find SharePoint document library "${GRAPH_DOCUMENT_LIBRARY}".`);
   }
 
-  graphDriveCache = { siteId: site.id, driveId: drive.id };
+  graphDriveCache = { siteId: site.id, driveId: drive.id, libraryName: GRAPH_DOCUMENT_LIBRARY };
   return graphDriveCache;
 };
 
@@ -419,7 +425,7 @@ const saveSubmission = async (payload) => {
     jobOrder,
     nextJobOrder: formatJobOrder(nextJobOrder),
     pdfFile,
-    oneDriveFolder: `${GRAPH_DOCUMENT_LIBRARY}/${reportFolderPath}`,
+    oneDriveFolder: `${graphDriveCache?.libraryName || GRAPH_DOCUMENT_LIBRARY}/${reportFolderPath}`,
     webUrl: uploadedFile.webUrl,
   };
 };

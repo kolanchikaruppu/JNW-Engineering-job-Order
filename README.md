@@ -32,3 +32,5 @@ JO 03 _ JNW _ 31-07-2026.pdf
 ## Notes
 
 The Azure web app needs SharePoint permission before submissions can upload PDFs.
+To save into a specific OneDrive instead, set the Azure app setting
+`GRAPH_DRIVE_ID` to that OneDrive drive ID.
