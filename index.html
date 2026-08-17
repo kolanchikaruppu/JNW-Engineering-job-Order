@@ -772,7 +772,8 @@
         saveHistoryEntry();
         localStorage.removeItem(storageKey);
         prepareBlankJobOrder(Number(result.nextJobOrder || nextJobNumber()));
-        alert(`Submitted job order ${result.jobOrder}.\nSaved in OneDrive Reports folder.`);
+        const savedFolder = result.oneDriveFolder || 'My files';
+          alert(`Submitted job order ${result.jobOrder}.\nSaved in ${savedFolder}.`);
         await fetchServerJobNumber();
       } catch (error) {
         alert(`Could not submit to OneDrive.\n${error.message || 'Please check the server is running.'}`);

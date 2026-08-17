@@ -12,11 +12,10 @@ const SEQUENCE_FILE = path.join(REPORTS_DIR, '.sequence.json');
 const LOG_FILE = path.join(REPORTS_DIR, 'Job_Order_Log.csv');
 
 const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
-const GRAPH_SITE_HOSTNAME = process.env.GRAPH_SITE_HOSTNAME || 'jnwengineering.sharepoint.com';
-const GRAPH_SITE_PATH = process.env.GRAPH_SITE_PATH || '/';
-const GRAPH_DOCUMENT_LIBRARY = process.env.GRAPH_DOCUMENT_LIBRARY || 'Documents';
-const GRAPH_FOLDER_PATH = process.env.GRAPH_FOLDER_PATH || 'Mobile Job Order Reports/{year}';
-const GRAPH_DRIVE_ID = process.env.GRAPH_DRIVE_ID || '';
+const GRAPH_ONEDRIVE_SITE_ID = process.env.GRAPH_ONEDRIVE_SITE_ID
+  || 'jnwengineering-my.sharepoint.com,93983fb9-90e8-4aae-a4dd-87c3eb396f02,58b5320c-42b8-4018-b508-1ab09a838e88';
+const GRAPH_ONEDRIVE_DRIVE_ID = process.env.GRAPH_ONEDRIVE_DRIVE_ID || '';
+const GRAPH_ONEDRIVE_FOLDER_PATH = process.env.GRAPH_ONEDRIVE_FOLDER_PATH || '{year}';
 
 let graphTokenCache = null;
 let graphDriveCache = null;
@@ -99,7 +98,7 @@ const getReportYear = (value, fallbackDate = new Date()) => {
   return String(date.getFullYear());
 };
 
-const buildReportFolderPath = (data) => GRAPH_FOLDER_PATH
+const buildReportFolderPath = (data) => GRAPH_ONEDRIVE_FOLDER_PATH
   .replaceAll('{year}', getReportYear(data.date, new Date(data.submittedAt)))
   .replaceAll('{yyyy}', getReportYear(data.date, new Date(data.submittedAt)));
 
@@ -299,22 +298,23 @@ const encodeSharePointPath = (value) => String(value)
 const resolveDrive = async () => {
   if (graphDriveCache) return graphDriveCache;
 
-  if (GRAPH_DRIVE_ID) {
-    graphDriveCache = { driveId: GRAPH_DRIVE_ID, libraryName: 'OneDrive' };
+  if (GRAPH_ONEDRIVE_DRIVE_ID) {
+    const drive = await graphRequest(`/drives/${GRAPH_ONEDRIVE_DRIVE_ID}`);
+    graphDriveCache = { driveId: drive.id, libraryName: 'My files' };
     return graphDriveCache;
   }
 
-  const sitePath = GRAPH_SITE_PATH === '/' ? '' : `:${GRAPH_SITE_PATH}`;
-  const site = await graphRequest(`/sites/${GRAPH_SITE_HOSTNAME}${sitePath}`);
-  const drives = await graphRequest(`/sites/${site.id}/drives`);
-  const drive = (drives.value || []).find((item) => item.name === GRAPH_DOCUMENT_LIBRARY)
-    || (drives.value || [])[0];
+  const drive = await graphRequest(`/sites/${GRAPH_ONEDRIVE_SITE_ID}/drive`);
 
-  if (!drive) {
-    throw new Error(`Could not find SharePoint document library "${GRAPH_DOCUMENT_LIBRARY}".`);
+  if (!drive?.id) {
+    throw new Error('Could not find the configured OneDrive.');
   }
 
-  graphDriveCache = { siteId: site.id, driveId: drive.id, libraryName: GRAPH_DOCUMENT_LIBRARY };
+  graphDriveCache = {
+    siteId: GRAPH_ONEDRIVE_SITE_ID,
+    driveId: drive.id,
+    libraryName: 'My files',
+  };
   return graphDriveCache;
 };
 
@@ -425,7 +425,7 @@ const saveSubmission = async (payload) => {
     jobOrder,
     nextJobOrder: formatJobOrder(nextJobOrder),
     pdfFile,
-    oneDriveFolder: `${graphDriveCache?.libraryName || GRAPH_DOCUMENT_LIBRARY}/${reportFolderPath}`,
+    oneDriveFolder: `${graphDriveCache?.libraryName || 'My files'}/${reportFolderPath}`,
     webUrl: uploadedFile.webUrl,
   };
 };
@@ -481,5 +481,5 @@ const server = http.createServer(async (request, response) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`JNW Job Order server running at http://localhost:${PORT}/`);
-  console.log(`Reports upload to: ${GRAPH_DOCUMENT_LIBRARY}/${GRAPH_FOLDER_PATH}`);
+  console.log(`Reports upload to: My files/${GRAPH_ONEDRIVE_FOLDER_PATH}`);
 });
